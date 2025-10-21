@@ -29,7 +29,9 @@ app.get('/', (req, res) => {
           <input name="url" style="width:60%;" placeholder="https://example.com" />
           <button>表示</button>
         </form>
-        <p>リンク・画像・動画・iframe まで proxy 化されます。</p>
+        <footer style="margin-top:40px; font-size:12px; color:#888;">
+          &copy; 2025 mer0w0. All rights reserved.
+        </footer> 
       </body>
     </html>
   `);
