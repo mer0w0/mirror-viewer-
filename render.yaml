@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: web-mirror
+    name: web-mirror-light
     env: node
     plan: free
     region: oregon
