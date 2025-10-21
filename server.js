@@ -24,12 +24,12 @@ app.get('/', (req, res) => {
     <html>
       <head><meta charset="utf-8"><title>Web Mirror (常時Proxy)</title></head>
       <body style="font-family:sans-serif; padding:20px;">
-        <h2>🔄 Web Mirror (常時Proxy・軽量版)</h2>
+        <h2>🔄 Web Mirror (常時Proxy・軽量拡張版)</h2>
         <form action="/view" method="get">
           <input name="url" style="width:60%;" placeholder="https://example.com" />
           <button>表示</button>
         </form>
-        <p>リンクは常に proxy 経由になります。</p>
+        <p>リンク・画像・動画・iframe まで proxy 化されます。</p>
       </body>
     </html>
   `);
@@ -53,7 +53,7 @@ app.get('/view', async (req, res) => {
     let html = await response.text();
     const base = response.url || target;
 
-    // 常に /view?url=… に書き換える
+    // 全てのURLを書き換え
     const rewriteUrl = (match, p1) => {
       try {
         const resolved = new URL(p1, base).toString();
@@ -61,10 +61,22 @@ app.get('/view', async (req, res) => {
       } catch { return match; }
     };
 
-    html = html.replace(/<a\s+[^>]*href="([^"]*)"/gi, rewriteUrl);
-    html = html.replace(/<img\s+[^>]*src="([^"]*)"/gi, rewriteUrl);
-    html = html.replace(/<script\s+[^>]*src="([^"]*)"/gi, rewriteUrl);
-    html = html.replace(/<link\s+[^>]*href="([^"]*)"/gi, rewriteUrl);
+    // 書き換え対象
+    const patterns = [
+      /<a\s+[^>]*href="([^"]*)"/gi,
+      /<img\s+[^>]*src="([^"]*)"/gi,
+      /<script\s+[^>]*src="([^"]*)"/gi,
+      /<link\s+[^>]*href="([^"]*)"/gi,
+      /<video\s+[^>]*src="([^"]*)"/gi,
+      /<audio\s+[^>]*src="([^"]*)"/gi,
+      /<iframe\s+[^>]*src="([^"]*)"/gi,
+      /<source\s+[^>]*src="([^"]*)"/gi,
+      /url\(([^)]+)\)/gi
+    ];
+
+    patterns.forEach(pat => {
+      html = html.replace(pat, rewriteUrl);
+    });
 
     res.setHeader('content-type', 'text/html; charset=utf-8');
     res.send(html);
