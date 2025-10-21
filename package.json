@@ -1,7 +1,7 @@
 {
   "name": "web-mirror",
   "version": "1.0.0",
-  "description": "Simple-web",
+  "description": "Simple-Web",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
