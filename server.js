@@ -1,13 +1,9 @@
 const express = require('express');
 const fetch = require('node-fetch');
-const puppeteer = require('puppeteer');
 const { URL } = require('url');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Puppeteerを使うサイト
-const puppeteerSites = ['padlet.com', 'miro.com'];
 
 // 安全チェック
 function isAllowed(raw) {
@@ -22,18 +18,18 @@ function isAllowed(raw) {
   }
 }
 
-// 起点ページ
+// トップページ
 app.get('/', (req, res) => {
   res.send(`
     <html>
-      <head><meta charset="utf-8"><title>Hybrid Web Mirror</title></head>
+      <head><meta charset="utf-8"><title>Web Mirror (常時Proxy)</title></head>
       <body style="font-family:sans-serif; padding:20px;">
-        <h2>🔄 Hybrid Web Mirror</h2>
+        <h2>🔄 Web Mirror (常時Proxy・軽量版)</h2>
         <form action="/view" method="get">
           <input name="url" style="width:60%;" placeholder="https://example.com" />
           <button>表示</button>
         </form>
-        <p>軽量版かPuppeteer版か自動で選択</p>
+        <p>リンクは常に proxy 経由になります。</p>
       </body>
     </html>
   `);
@@ -45,23 +41,10 @@ app.get('/view', async (req, res) => {
   if (!target || !isAllowed(target)) return res.status(400).send('無効なURLです。');
 
   try {
-    const hostname = new URL(target).hostname.toLowerCase();
-
-    // Puppeteer版を使う場合
-    if (puppeteerSites.some(domain => hostname.includes(domain))) {
-      const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox','--disable-setuid-sandbox'] });
-      const page = await browser.newPage();
-      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 45000 });
-      const content = await page.content();
-      await browser.close();
-
-      res.setHeader('content-type', 'text/html; charset=utf-8');
-      return res.send(content);
-    }
-
-    // 軽量版
     const response = await fetch(target);
     const contentType = response.headers.get('content-type') || '';
+
+    // HTML以外はそのままストリームで返す
     if (!contentType.includes('text/html')) {
       res.setHeader('content-type', contentType);
       return response.body.pipe(res);
@@ -69,12 +52,15 @@ app.get('/view', async (req, res) => {
 
     let html = await response.text();
     const base = response.url || target;
+
+    // 常に /view?url=… に書き換える
     const rewriteUrl = (match, p1) => {
       try {
         const resolved = new URL(p1, base).toString();
         return match.replace(p1, `/view?url=${encodeURIComponent(resolved)}`);
       } catch { return match; }
     };
+
     html = html.replace(/<a\s+[^>]*href="([^"]*)"/gi, rewriteUrl);
     html = html.replace(/<img\s+[^>]*src="([^"]*)"/gi, rewriteUrl);
     html = html.replace(/<script\s+[^>]*src="([^"]*)"/gi, rewriteUrl);
