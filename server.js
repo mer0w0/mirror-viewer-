@@ -1,13 +1,12 @@
 // server.js
 const express = require('express');
-const fetch = require('node-fetch');
-const cheerio = require('cheerio');
+const fetch = require('node-fetch'); // Node18+なら不要
 const { URL } = require('url');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 安全なURL判定（最低限）
+// 安全チェック（localhost/プライベートIPを避ける）
 function isAllowed(raw) {
   try {
     const u = new URL(raw);
@@ -20,17 +19,16 @@ function isAllowed(raw) {
   }
 }
 
-// メインページ
+// 起点ページ
 app.get('/', (req, res) => {
   res.send(`
     <html><head><meta charset="utf-8"><title>Web Mirror</title></head>
-    <body style="font-family: sans-serif; padding:20px;">
-      <h2>🔍 Web Mirror</h2>
+    <body style="font-family:sans-serif; padding:20px;">
+      <h2>🔄 Web Mirror (軽量版)</h2>
       <form action="/view" method="get">
         <input name="url" style="width:60%;" placeholder="https://example.com" />
         <button>表示</button>
       </form>
-      <p>（完全個人用）</p>
     </body></html>
   `);
 });
@@ -44,36 +42,34 @@ app.get('/view', async (req, res) => {
     const response = await fetch(target);
     const contentType = response.headers.get('content-type') || '';
 
-    // HTML以外ならそのまま返す
+    // HTML以外はストリームでそのまま返す
     if (!contentType.includes('text/html')) {
       res.setHeader('content-type', contentType);
       response.body.pipe(res);
       return;
     }
 
-    // HTMLなら書き換え処理
-    const html = await response.text();
+    // HTMLは軽量置換でリンク/画像を書き換え
+    let html = await response.text();
     const base = response.url || target;
-    const $ = cheerio.load(html, { decodeEntities: false });
 
-    const rewrite = (attrVal) => {
-      if (!attrVal) return attrVal;
+    const rewriteUrl = (match, p1) => {
       try {
-        const resolved = new URL(attrVal, base).toString();
-        return `/view?url=${encodeURIComponent(resolved)}`;
+        const resolved = new URL(p1, base).toString();
+        return match.replace(p1, `/view?url=${encodeURIComponent(resolved)}`);
       } catch {
-        return attrVal;
+        return match;
       }
     };
 
-    $('a[href]').each((_, el) => $(el).attr('href', rewrite($(el).attr('href'))));
-    $('img[src]').each((_, el) => $(el).attr('src', rewrite($(el).attr('src'))));
-    $('script[src]').each((_, el) => $(el).attr('src', rewrite($(el).attr('src'))));
-    $('link[rel="stylesheet"][href]').each((_, el) => $(el).attr('href', rewrite($(el).attr('href'))));
-    $('form[action]').each((_, el) => $(el).attr('action', rewrite($(el).attr('action'))));
+    // <a href=""> と <img src=""> と <script src=""> と <link href=""> を軽量置換
+    html = html.replace(/<a\s+[^>]*href="([^"]*)"/gi, rewriteUrl);
+    html = html.replace(/<img\s+[^>]*src="([^"]*)"/gi, rewriteUrl);
+    html = html.replace(/<script\s+[^>]*src="([^"]*)"/gi, rewriteUrl);
+    html = html.replace(/<link\s+[^>]*href="([^"]*)"/gi, rewriteUrl);
 
     res.setHeader('content-type', 'text/html; charset=utf-8');
-    res.send($.html());
+    res.send(html);
   } catch (err) {
     console.error(err);
     res.status(500).send('読み込み中にエラーが発生しました。');
