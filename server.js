@@ -24,7 +24,7 @@ app.get('/', (req, res) => {
     <html>
       <head><meta charset="utf-8"><title>www.google.com</title></head>
       <body style="font-family:sans-serif; padding:20px;">
-        <h2>🔄 Web Mirror (軽量β版)</h2>
+        <h2>🔍️ Web Mirror (軽量/β版)</h2>
         <form action="/view" method="get">
           <input name="url" style="width:60%;" placeholder="https://example.com" />
           <button>表示</button>
