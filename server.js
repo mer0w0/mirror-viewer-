@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const fetch = require('node-fetch');
 const { URL } = require('url');
@@ -5,90 +6,132 @@ const { URL } = require('url');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 安全チェック
+/* ===============================
+   ✅ 安全性チェック
+================================ */
 function isAllowed(raw) {
   try {
     const u = new URL(raw);
     if (!['http:', 'https:'].includes(u.protocol)) return false;
     const host = u.hostname.toLowerCase();
-    if (host.includes('localhost') || host.startsWith('127.') || host.startsWith('::1')) return false;
+    if (
+      host.includes('localhost') ||
+      host.startsWith('127.') ||
+      host.startsWith('::1')
+    ) return false;
     return true;
   } catch {
     return false;
   }
 }
 
-// トップページ
+/* ===============================
+   🏠 トップページ
+================================ */
 app.get('/', (req, res) => {
   res.send(`
     <html>
-      <head><meta charset="utf-8"><title>www.google.com</title></head>
-      <body style="font-family:sans-serif; padding:20px;">
-        <h2>🔍️ Web Mirror (軽量/β版)</h2>
+      <head>
+        <meta charset="utf-8">
+        <title>Web Mirror</title>
+        <style>
+          body { font-family: sans-serif; padding: 30px; background: #f8f8f8; color: #222; }
+          input { width: 70%; padding: 8px; border-radius: 6px; border: 1px solid #ccc; }
+          button { padding: 8px 16px; border-radius: 6px; border: none; background: #0078ff; color: white; cursor: pointer; }
+          button:hover { background: #005fcc; }
+          footer { margin-top: 40px; font-size: 12px; color: #777; }
+        </style>
+      </head>
+      <body>
+        <h2>🔍 Web Mirror (Light β)</h2>
         <form action="/view" method="get">
-          <input name="url" style="width:60%;" placeholder="https://example.com" />
+          <input name="url" placeholder="https://example.com" />
           <button>表示</button>
         </form>
-        <footer style="margin-top:40px; font-size:12px; color:#888;">
+        <footer>
           &copy; 2025 mer0w0. All rights reserved.
-        </footer> 
+        </footer>
       </body>
     </html>
   `);
 });
 
-// 表示ルート
+/* ===============================
+   🌐 コンテンツ表示ルート
+================================ */
 app.get('/view', async (req, res) => {
   const target = req.query.url;
-  if (!target || !isAllowed(target)) return res.status(400).send('無効なURLです。');
+  if (!target || !isAllowed(target)) {
+    return res.status(400).send('無効なURLです。');
+  }
 
   try {
-    const response = await fetch(target);
+    const response = await fetch(target, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (compatible; WebMirror/1.0)',
+        'accept-language': 'ja,en;q=0.9'
+      }
+    });
+
     const contentType = response.headers.get('content-type') || '';
 
-    // HTML以外はそのままストリームで返す
+    // HTML以外はそのまま返す
     if (!contentType.includes('text/html')) {
       res.setHeader('content-type', contentType);
       return response.body.pipe(res);
     }
 
+    // HTML変換開始
     let html = await response.text();
     const base = response.url || target;
 
-    // 全てのURLを書き換え
+    // URL書き換え関数
     const rewriteUrl = (match, p1) => {
       try {
-        const resolved = new URL(p1, base).toString();
-        return match.replace(p1, `/view?url=${encodeURIComponent(resolved)}`);
-      } catch { return match; }
+        // URLにクォートなど混じってたら除去
+        const clean = p1.replace(/['"]/g, '').trim();
+        const resolved = new URL(clean, base).toString();
+        const proxied = `/view?url=${encodeURIComponent(resolved)}`;
+        return match.replace(p1, proxied);
+      } catch {
+        return match;
+      }
     };
 
-    // 書き換え対象
+    // HTML内の主要タグ・CSS url() をすべて書き換え
     const patterns = [
-      /<a\s+[^>]*href="([^"]*)"/gi,
-      /<img\s+[^>]*src="([^"]*)"/gi,
-      /<script\s+[^>]*src="([^"]*)"/gi,
-      /<link\s+[^>]*href="([^"]*)"/gi,
-      /<video\s+[^>]*src="([^"]*)"/gi,
-      /<audio\s+[^>]*src="([^"]*)"/gi,
-      /<iframe\s+[^>]*src="([^"]*)"/gi,
-      /<source\s+[^>]*src="([^"]*)"/gi,
-      /url\(([^)]+)\)/gi
+      /<a\s+[^>]*href=["']([^"']+)["']/gi,
+      /<img\s+[^>]*src=["']([^"']+)["']/gi,
+      /<script\s+[^>]*src=["']([^"']+)["']/gi,
+      /<link\s+[^>]*href=["']([^"']+)["']/gi,
+      /<iframe\s+[^>]*src=["']([^"']+)["']/gi,
+      /<video\s+[^>]*src=["']([^"']+)["']/gi,
+      /<audio\s+[^>]*src=["']([^"']+)["']/gi,
+      /<source\s+[^>]*src=["']([^"']+)["']/gi,
+      /url\((['"]?)([^'")]+)\1\)/gi
     ];
 
     patterns.forEach(pat => {
       html = html.replace(pat, rewriteUrl);
     });
 
-    res.setHeader('content-type', 'text/html; charset=utf-8');
-    res.send(html);
+    // <base>タグを削除してリダイレクト誤動作防止
+    html = html.replace(/<base[^>]*>/gi, '');
 
+    // セキュリティヘッダー追加
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    res.setHeader('x-powered-by', 'WebMirror Light');
+
+    res.send(html);
   } catch (err) {
-    console.error(err);
-    res.status(500).send('読み込み中にエラーが発生しました。');
+    console.error('Fetch Error:', err);
+    res.status(500).send('ページの読み込みに失敗しました。');
   }
 });
 
+/* ===============================
+   🚀 サーバー起動
+================================ */
 app.listen(PORT, () => {
-  console.log(`Listening on http://localhost:${PORT}`);
+  console.log(`✅ WebMirror running on http://localhost:${PORT}`);
 });
